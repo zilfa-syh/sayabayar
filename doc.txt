@@ -1,0 +1,612 @@
+1Generate API Key
+
+Klik Generate Key di atas, beri label deskriptif (misal: Production atau Staging), lalu simpan key yang muncul — hanya ditampilkan sekali dan tidak bisa dilihat lagi.
+2Kirim request dengan header X-API-Key
+
+Sertakan API key di setiap request menggunakan header X-API-Key. Semua endpoint memerlukan autentikasi ini.
+X-API-Key: sk_live_xxxx...
+Content-Type: application/json
+3Contoh Code
+
+Pilih fitur dan bahasa pemrograman:
+
+1. INVOICE
+const API_KEY = 'sk_live_xxxx...'
+const BASE    = 'https://api.sayabayar.com/v1'
+const headers = { 'Content-Type': 'application/json', 'X-API-Key': API_KEY }
+
+// Buat invoice baru
+const res = await fetch(`${BASE}/invoices`, {
+  method: 'POST', headers,
+  body: JSON.stringify({
+    customer_name: 'Budi Santoso',
+    customer_email: 'budi@example.com',
+    amount: 150000,
+    description: 'Pembelian produk X',
+    channel_preference: 'client',
+    payment_method: 'qris',
+    redirect_url: 'https://toko-anda.com/order/success'
+  })
+})
+const invoice = await res.json()
+console.log('Payment URL:', invoice.data.payment_url)
+
+// Cek status
+const detail = await fetch(`${BASE}/invoices/${invoice.data.id}`, { headers })
+console.log('Status:', (await detail.json()).data.status)
+
+// Konfirmasi pembayaran (QRIS & bank transfer)
+await fetch(`${BASE}/invoices/${invoice.data.id}/confirm`, { method: 'POST', headers })
+
+2. COnnect CHannel
+// Tahap 1: Verify → list outlets
+const verify = await fetch(`${BASE}/channels/connect/verify`, {
+  method: 'POST', headers,
+  body: JSON.stringify({
+    channel_type: 'qris_mandiri',
+    username: '081234567890',
+    password: 'password_livin_merchant'
+  })
+})
+const { data: { outlets } } = await verify.json()
+
+// Tahap 2: Connect outlet → create channel
+const connect = await fetch(`${BASE}/channels/connect`, {
+  method: 'POST', headers,
+  body: JSON.stringify({
+    channel_type: 'qris_mandiri',
+    username: '081234567890',
+    password: 'password_livin_merchant',
+    outlet_id: outlets[0].id,
+    // qris_string: '00020101021226...',  // opsional: fallback bila bank tidak kirim QRIS (mis. Mandiri PNG gagal decode)
+  })
+})
+console.log('Channel ID:', (await connect.json()).data.id)
+
+3 chanel manajement
+
+// List semua channel
+const channels = await fetch(`${BASE}/channels`, { headers })
+console.log((await channels.json()).data)
+
+// Pause / Start channel
+await fetch(`${BASE}/channels/${channelId}`, {
+  method: 'PATCH', headers,
+  body: JSON.stringify({ is_active: false })
+})
+
+// Test connection
+await fetch(`${BASE}/channels/${channelId}/test-connection`, {
+  method: 'POST', headers
+})
+
+// Delete channel
+await fetch(`${BASE}/channels/${channelId}`, {
+  method: 'DELETE', headers
+})
+
+// Riwayat transaksi realtime (Pro Plus)
+const history = await fetch(`${BASE}/channels/${channelId}/transaction-history`, {
+  method: 'POST', headers,
+  body: JSON.stringify({ start_date: '2026-09-24', end_date: '2026-09-30' })
+})
+console.log((await history.json()).data)
+
+4. lainnya 
+// Cek saldo
+const balance = await fetch(`${BASE}/balance`, { headers })
+console.log((await balance.json()).data)
+
+// List webhook
+const webhooks = await fetch(`${BASE}/webhooks`, { headers })
+console.log((await webhooks.json()).data)
+
+
+Referensi Endpoint
+Invoice
+POST
+/v1/invoices
+Buat invoice baru
+GET
+/v1/invoices
+List invoice (filter: status, page)
+GET
+/v1/invoices/:id
+Detail & status invoice
+POST
+/v1/invoices/:id/confirm
+Konfirmasi sudah bayar (QRIS & transfer)
+Channel Connect
+POST
+/v1/channels/connect/verify
+Tahap 1: verify → list outlets
+POST
+/v1/channels/connect
+Tahap 2: connect outlet → create channel
+Channel Management
+GET
+/v1/channels
+List semua channel
+PATCH
+/v1/channels/:id
+Pause/Start, set jam maintenance
+POST
+/v1/channels/:id/test-connection
+Test koneksi channel
+DELETE
+/v1/channels/:id
+Hapus channel
+POST
+/v1/channels/:id/transaction-history
+Riwayat realtime (Pro Plus)
+Lainnya
+GET
+/v1/balance
+Cek saldo merchant
+GET
+/v1/webhooks
+List webhook endpoint
+
+Parameter payment_method
+
+Gunakan payment_method pada POST /v1/invoices untuk langsung menentukan metode pembayaran. Jika tidak diisi, customer akan memilih sendiri di halaman pembayaran.
+Nilai	Metode	Prasyarat
+qris	QRIS	—
+bca_transfer	Transfer Bank BCA	—
+va_bca	VA Bank BCA	KYC + VA aktif
+va_bni	VA Bank BNI	KYC + VA aktif
+va_bri	VA Bank BRI	KYC + VA aktif
+va_mandiri	VA Bank Mandiri	KYC + VA aktif
+va_permata	VA Bank Permata	KYC + VA aktif
+va_cimb	VA CIMB Niaga	KYC + VA aktif
+va_bsm	VA BSI (Bank Syariah Indonesia)	KYC + VA aktif
+va_danamon	VA Bank Danamon	KYC + VA aktif
+va_seabank	VA SeaBank	KYC + VA aktif
+⚡ Virtual Account: Untuk menggunakan VA, pastikan KYC sudah diverifikasi dan fitur VA sudah diaktifkan di menu Virtual Account. Biaya admin mulai dari Rp 3.000/transaksi. Pembayaran terdeteksi otomatis, settlement H+2.
+
+
+Parameter — Connect Channel API
+
+Parameter untuk POST /v1/channels/connect/verify dan POST /v1/channels/connect:
+Parameter	Tahap	Keterangan
+channel_type	1 & 2	qris_mandiri | qris_bca | qris_bni
+username	1 & 2	No. HP (Mandiri) atau Email (BCA/BNI)
+password	1 & 2	Password akun merchant
+outlet_id	2 saja	ID outlet dari response Tahap 1
+6
+Format Response
+
+Semua response menggunakan format JSON yang konsisten dengan field success, data, dan meta.
+
+Post /invoices
+{
+  "success": true,
+  "data": {
+    "id":             "d3b6c53e-22c5-4a43-...",
+    "invoice_number": "INV-20240327-0042",
+    "amount":         150000,
+    "amount_to_pay":  150237,
+    "unique_code":    237,
+    "payment_url":    "https://sayabayar.com/pay/abc123token",
+    "redirect_url":   "https://toko-anda.com/order/success",
+    "status":         "pending",
+    "expired_at":     "2026-03-27T05:00:00.000+07:00",
+    "created_at":     "2026-03-27T04:00:00.000+07:00",
+    "payment_channel": {
+      "channel_type":  "qris_bri",
+      "channel_owner": "client",
+      "account_name":  "TOKO ANDA",
+      "unique_code":   237,
+      "amount_to_pay": 150237,
+      "qris_string":   "00020101021226...(dynamic QRIS string)",
+      "expired_at":    "2026-03-27T04:30:00.000+07:00"
+    }
+  },
+  "meta": {
+    "request_id": "982431b3-882c-4d5d-b87b-2b5edd3498ee",
+    "timestamp":  "2026-03-27T04:00:00.000+07:00"
+  }
+}
+
+Post /invoices Va
+{
+  "success": true,
+  "data": {
+    "id":             "d3b6c53e-22c5-4a43-...",
+    "invoice_number": "INV-20260722-00148",
+    "amount":         10000,
+    "amount_to_pay":  13775,
+    "unique_code":    0,
+    "payment_url":    "https://sayabayar.com/pay/ptwU7YEyoVjx",
+    "redirect_url":   null,
+    "status":         "pending",
+    "expired_at":     "2026-07-23T08:00:00.000+07:00",
+    "created_at":     "2026-07-22T08:00:00.000+07:00",
+    "payment_channel": {
+      "channel_type":  "va_bni",
+      "channel_owner": "va",
+      "va_number":     "9886556001167000164882302",
+      "va_bank":       "bni",
+      "va_bank_name":  "BNI VA",
+      "amount_to_pay": 13775,
+      "va_fee":        3775,
+      "va_fee_bearer": "customer",
+      "expired_at":    "2026-07-23 08:00"
+    }
+  },
+  "meta": {
+    "request_id": "c2d6eacd-decb-4cfe-...",
+    "timestamp":  "2026-07-22T08:00:01.166+07:00"
+  }
+}
+
+Get /invoices
+{
+  "success": true,
+  "data": [
+    {
+      "id":             "d3b6c53e-22c5-4a43-...",
+      "invoice_number": "INV-20240327-0042",
+      "customer_name":  "Budi Santoso",
+      "amount":         150000,
+      "amount_unique":  150000,
+      "status":         "paid",
+      "payment_url":    "https://sayabayar.com/pay/INV-20240327-0042",
+      "expired_at":     "2026-03-27T05:00:00.000+07:00",
+      "paid_at":        "2026-03-27T04:32:10.000+07:00",
+      "created_at":     "2026-03-27T04:00:00.000+07:00"
+    }
+  ],
+  "pagination": {
+    "page":        1,
+    "per_page":    20,
+    "total":       1,
+    "total_pages": 1
+  },
+  "meta": {
+    "request_id": "a1b2c3d4-...",
+    "timestamp":  "2026-03-27T04:00:00.000+07:00"
+  }
+}
+
+Get /invoices/:id
+{
+  "success": true,
+  "data": {
+    "id":             "d3b6c53e-22c5-4a43-...",
+    "invoice_number": "INV-20240327-0042",
+    "customer_name":  "Budi Santoso",
+    "customer_email": "budi@example.com",
+    "amount":         150000,
+    "amount_unique":  150000,
+    "unique_code":    0,
+    "description":    "Pembelian produk X",
+    "status":         "paid",
+    "source":         "api",
+    "payment_url":    "https://sayabayar.com/pay/INV-20240327-0042",
+    "redirect_url":   "https://toko-anda.com/order/success",
+    "payment_channel": {
+      "id":             "ch_bca_01",
+      "channel_type":   "qris_bri",
+      "account_name":   "TOKO ANDA",
+      "account_number": "1234567890",
+      "qris_string":    "00020101021226...(dynamic QRIS — hanya untuk QRIS)"
+    },
+    "transactions": [
+      {
+        "id":               "tx_abc",
+        "amount":           150000,
+        "reference_number": "REF20240327001",
+        "match_status":     "matched",
+        "detected_at":      "2026-03-27T04:32:00.000+07:00"
+      }
+    ],
+    "expired_at":   "2026-03-27T05:00:00.000+07:00",
+    "paid_at":      "2026-03-27T04:32:10.000+07:00",
+    "confirmed_at": null,
+    "created_at":   "2026-03-27T04:00:00.000+07:00"
+  },
+  "meta": {
+    "request_id": "a1b2c3d4-...",
+    "timestamp":  "2026-03-27T04:00:00.000+07:00"
+  }
+}
+
+POst /invoices/:id/confirm
+{
+  "success": true,
+  "data": {
+    "status":       "user_confirmed",
+    "confirmed_at": "2026-03-27T04:25:00.000+07:00"
+  },
+  "meta": {
+    "request_id": "f4e5d6c7-...",
+    "timestamp":  "2026-03-27T04:25:00.000+07:00"
+  }
+}
+
+get /webhooks
+{
+  "success": true,
+  "data": [
+    {
+      "id":          "wh_abc123",
+      "url":         "https://api.yourapp.com/webhook",
+      "event_types": ["invoice.paid", "invoice.expired"],
+      "is_active":   true,
+      "created_at":  "2026-03-27T04:00:00.000+07:00"
+    }
+  ],
+  "meta": {
+    "request_id": "a1b2c3d4-...",
+    "timestamp":  "2026-03-27T04:00:00.000+07:00"
+  }
+}
+
+Get /balance
+{
+  "success": true,
+  "data": {
+    "balance_pending":   25000,
+    "balance_available": 500000,
+    "total_earned":      2500000,
+    "total_withdrawn":   2000000
+  },
+  "meta": {
+    "request_id": "a1b2c3d4-...",
+    "timestamp":  "2026-03-27T04:00:00.000+07:00"
+  }
+}
+
+Get /channels
+{
+  "success": true,
+  "data": [
+    {
+      "id":               "ch_abc123",
+      "channel_type":     "qris_bri",
+      "account_name":     "TOKO ANDA",
+      "account_number":   "1234567890",
+      "is_active":        true,
+      "circuit_state":    "closed",
+      "consecutive_errors": 0,
+      "maintenance_start": null,
+      "maintenance_end":   null,
+      "last_scraped_at":  "2026-09-30T12:00:00.000+07:00",
+      "last_success_at":  "2026-09-30T12:00:00.000+07:00"
+    }
+  ]
+}
+
+patch /channels/:id
+{
+  "success": true,
+  "data": {
+    "id":                "ch_abc123",
+    "is_active":         false,
+    "maintenance_start": "00:00",
+    "maintenance_end":   "05:00"
+  }
+}
+
+Post /channels/:id/transaction-history
+{
+  "success": true,
+  "data": {
+    "channel_id":   "ch_abc123",
+    "channel_type": "qris_bri",
+    "account_name": "TOKO ANDA",
+    "start_date":   "2026-09-24",
+    "end_date":     "2026-09-30",
+    "transactions": [
+      {
+        "datetime":    "2026-09-30T14:32:10+07:00",
+        "amount":      250000,
+        "reference":   "TXN-8827163",
+        "sender_name": "QRIS Off Us - Bank Lain"
+      },
+      {
+        "datetime":    "2026-09-30T13:15:44+07:00",
+        "amount":      75000,
+        "reference":   "TXN-7726451",
+        "sender_name": null
+      }
+    ],
+    "total": 2
+  }
+}
+
+POst /channels/connect/verify
+{
+  "success": true,
+  "data": {
+    "outlets": [
+      {
+        "id": "outlet-uuid",
+        "name": "Outlet Pusat",
+        "primary": true,
+        "qris_string": "000201010212...",
+        "merchant_name": "Toko Maju Jaya",
+        "identifier": "ID2024xxxxx"
+      }
+    ]
+  },
+  "meta": { "request_id": "a1b2c3d4-...", "timestamp": "2026-10-15T10:00:00.000+07:00" }
+}
+
+Post /channels/connect 
+{
+  "success": true,
+  "data": {
+    "id": "channel-uuid",
+    "channel_type": "qris_mandiri",
+    "account_name": "Toko Maju Jaya",
+    "account_number": "ID2024xxxxx",
+    "is_active": true,
+    "outlet": { "id": "outlet-uuid", "name": "Outlet Pusat" },
+    "qr_source": "bank-png"
+  },
+  "meta": { "request_id": "a1b2c3d4-...", "timestamp": "2026-10-15T10:01:00.000+07:00" }
+}
+
+❌ Response Error
+POst /confirm va
+{
+  "success": false,
+  "error": {
+    "code":    "VA_NO_CONFIRM",
+    "message": "Invoice Virtual Account tidak memerlukan konfirmasi manual. Pembayaran terdeteksi otomatis."
+  },
+  "meta": {
+    "request_id": "a1b2c3d4-...",
+    "timestamp":  "2026-03-27T04:25:00.000+07:00"
+  }
+}
+
+Connect 401
+{
+  "success": false,
+  "error": {
+    "code": "INVALID_CREDENTIALS",
+    "message": "Login gagal: Password salah",
+    "details": null
+  },
+  "meta": { "request_id": "a1b2c3d4-...", "timestamp": "2026-10-15T10:00:00.000+07:00" }
+}
+
+Connect 422 limit
+{
+  "success": false,
+  "error": {
+    "code": "MAX_CHANNELS_REACHED",
+    "message": "Batas maksimal channel (3) telah tercapai. Hubungi kami untuk menambah kuota.",
+    "details": null
+  },
+  "meta": { "request_id": "a1b2c3d4-...", "timestamp": "2026-10-15T10:01:00.000+07:00" }
+}
+
+error 401
+{
+  "success": false,
+  "error": {
+    "code":    "UNAUTHORIZED",
+    "message": "API key tidak valid atau tidak aktif",
+    "details": null
+  },
+  "meta": {
+    "request_id": "a1b2c3d4-...",
+    "timestamp":  "2026-03-27T04:00:00.000+07:00"
+  }
+}
+
+error 422
+{
+  "success": false,
+  "error": {
+    "code":    "VALIDATION_ERROR",
+    "message": "Validasi gagal",
+    "details": [
+      { "field": "amount", "message": "Amount harus lebih dari 0" }
+    ]
+  },
+  "meta": {
+    "request_id": "a1b2c3d4-...",
+    "timestamp":  "2026-03-27T04:00:00.000+07:00"
+  }
+}
+
+error 429
+{
+  "success": false,
+  "error": {
+    "code":    "RATE_LIMIT_EXCEEDED",
+    "message": "Terlalu banyak request",
+    "details": null
+  },
+  "meta": {
+    "request_id": "a1b2c3d4-...",
+    "timestamp":  "2026-03-27T04:00:00.000+07:00"
+  }
+}
+
+
+
+
+
+1Daftarkan URL endpoint di aplikasi Anda
+
+Klik Tambah Webhook di atas, isi URL server Anda (harus HTTPS di production) dan pilih event yang ingin diterima. Simpan secret key yang muncul — hanya ditampilkan sekali.
+2Terima dan verifikasi request dari Saya Bayar
+
+Setiap kali event terjadi, server Saya Bayar akan mengirim HTTP POST ke URL Anda dengan header berikut:
+Content-Type: application/json
+X-Webhook-Signature: sha256_hash_dari_payload
+X-Webhook-Event: invoice.paid
+
+Contoh payload JSON yang diterima:
+
+{
+  "event": "invoice.paid",
+  "data": {
+    "invoice_id": "d3b6c53e-22c5-4a43-...",
+    "invoice_number": "INV-2024-001",
+    "amount": 150000,
+    "amount_unique": 150123,
+    "status": "paid",
+    "payment_channel": "BCA",
+    "paid_at": "2024-03-27T03:00:00.000Z"
+  },
+  "timestamp": "2024-03-27T03:00:05.000Z"
+}
+
+3Verifikasi signature & proses event
+
+Selalu verifikasi signature sebelum memproses data, agar request tidak bisa dipalsukan. Pilih bahasa yang Anda gunakan:
+
+
+const express = require('express')
+const crypto = require('crypto')
+const app = express()
+
+// PENTING: gunakan raw body, bukan JSON parsed
+app.use('/webhook', express.raw({ type: 'application/json' }))
+
+const WEBHOOK_SECRET = 'whsec_xxxx...' // secret dari dashboard
+
+app.post('/webhook', (req, res) => {
+  const signature = req.headers['x-webhook-signature']
+  const payload   = req.body.toString()
+
+  // Verifikasi signature — HMAC-SHA256 standar
+  const expected = crypto
+    .createHmac('sha256', WEBHOOK_SECRET)
+    .update(payload)
+    .digest('hex')
+
+  if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) {
+    return res.status(401).json({ error: 'Invalid signature' })
+  }
+
+  const { event, data } = JSON.parse(payload)
+
+  if (event === 'invoice.paid') {
+    console.log('Invoice lunas:', data.invoice_number, '— Rp', data.amount)
+    // → aktifkan akun, proses pesanan, kirim email konfirmasi
+  } else if (event === 'invoice.expired') {
+    console.log('Invoice kadaluarsa:', data.invoice_number)
+    // → batalkan pesanan, kirim notifikasi ke customer
+  } else if (event === 'invoice.cancelled') {
+    console.log('Invoice dibatalkan:', data.invoice_number)
+    // → kembalikan stok, refund jika perlu
+  }
+
+  res.json({ received: true })
+})
+
+app.listen(3000)
+
+4Referensi Events
+invoice.paidInvoice berhasil dibayar oleh customer
+invoice.expiredInvoice melewati batas waktu pembayaran
+invoice.cancelledInvoice dibatalkan oleh merchant
+💡 Tips testing lokal: Gunakan webhook.site atau ngrok untuk mendapat URL publik saat development, sehingga Anda bisa langsung melihat payload yang masuk tanpa deploy ke server.
